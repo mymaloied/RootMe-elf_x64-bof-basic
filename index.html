@@ -517,20 +517,6 @@ p.<span class="fn">interactive</span>()
     <p>Shell получен с флагом в <span class="inline-code">.passwd</span>. Задача решена.</p>
   </div>
 
-  <!-- KEY TAKEAWAYS -->
-  <div class="section">
-    <div class="section-title">Выводы</div>
-    <p><strong style="color:var(--cyan)">1. Всегда тестируй на том же бинаре.</strong>
-       Локальная компиляция даёт другие адреса. Правильный способ — скачать бинарь с сервера
-       через <span class="inline-code">ssh.download_file()</span> и работать с ним.</p>
-    <p><strong style="color:var(--cyan)">2. Stack alignment — ситуативно.</strong>
-       System V AMD64 ABI требует RSP % 16 == 0 при <span class="inline-code">call</span>.
-       В ret2win это <em>иногда</em> нужен лишний <span class="inline-code">ret</span>-гаджет — зависит от того,
-       что делает win-функция. <span class="inline-code">execve</span> в данном случае сработал и без него.</p>
-    <p><strong style="color:var(--cyan)">3. PIE off ≠ ASLR off.</strong>
-       ASLR рандомизирует стек и libc, но адреса .text при отключённом PIE фиксированы всегда.</p>
-  </div>
-
   <div class="footer">
     <span>pr1ncipL£ · 2026</span>
     <span>root-me · app-systeme · ELF-x64-Stack-buffer-overflow-basic</span>
